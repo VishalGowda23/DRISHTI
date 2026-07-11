@@ -35,6 +35,7 @@ from app.core.logger import get_logger
 from app.core.constants import TOPIC_MARKET_PRICES
 from app.infrastructure.database.mongodb import connect_to_mongodb, close_mongodb
 from app.infrastructure.external.symbol_pool import SYMBOL_POOL, symbol_base_prices
+from app.services.kafka_risk_service import on_price_tick as _risk_on_price_tick
 
 logger = get_logger("workers.mock_price_poller")
 
@@ -92,6 +93,8 @@ async def _publish_tick(symbol: str, price: float, token: int, source: str = "po
                 key=symbol.encode(),
                 value=json.dumps(msg).encode(),
             )
+            # Feed the risk model's return-series store on every successful publish
+            _risk_on_price_tick(symbol, price)
             return
         except Exception as exc:
             logger.error(
@@ -104,6 +107,8 @@ async def _publish_tick(symbol: str, price: float, token: int, source: str = "po
     # Direct MongoDB write (no Kafka)
     from app.workers.price_consumer_worker import apply_price_update
     await apply_price_update(symbol, round(price, 2), token, source)
+    # Feed the risk model's return-series store on the fallback path too
+    _risk_on_price_tick(symbol, price)
 
 
 # ---------------------------------------------------------------------------

@@ -27,6 +27,7 @@ from app.core.logger import get_logger
 from app.infrastructure.database.mongodb import connect_to_mongodb, close_mongodb, get_database
 from app.infrastructure.kafka.consumer import consume_forever
 from app.core.constants import TOPIC_MARKET_PRICES
+from app.services.kafka_risk_service import on_price_tick as _risk_on_price_tick
 
 logger = get_logger("workers.price_consumer")
 
@@ -159,6 +160,8 @@ async def _handle_price_tick(payload: dict) -> None:
         return
 
     await apply_price_update(symbol, float(price), int(token), source)
+    # Feed the streaming risk model's return-series store
+    _risk_on_price_tick(symbol, float(price))
 
 
 # ---------------------------------------------------------------------------

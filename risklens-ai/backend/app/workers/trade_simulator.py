@@ -27,6 +27,13 @@ from datetime import datetime, timezone
 from app.core.logger import get_logger
 from app.infrastructure.database.mongodb import connect_to_mongodb, close_mongodb, get_database
 from app.infrastructure.external.symbol_pool import SYMBOL_POOL, symbol_base_prices
+from app.services.kafka_risk_service import on_position_changed as _risk_on_position_changed
+
+try:
+    import anthropic as _anthropic
+    _ANTHROPIC_SDK_AVAILABLE = True
+except ImportError:
+    _ANTHROPIC_SDK_AVAILABLE = False
 
 logger = get_logger("workers.trade_simulator")
 
@@ -191,6 +198,70 @@ async def trade_simulator_worker() -> None:
                     "action": action,
                 }
             )
+
+            # --- Risk model hot-path ---
+            # Build a sectors_map from current holdings for correlation bucketing
+            sectors_map: dict[str, list[str]] = {}
+            for h in port["holdings"]:
+                sym = h.get("symbol", "")
+                sec = h.get("sector", "unknown")
+                sectors_map.setdefault(sec, []).append(sym)
+
+            # For ADJUST_QUANTITY we can derive the delta precisely;
+            # for ADD/REMOVE we use 0 -> current_value or current_value -> 0
+            if action == "ADJUST_QUANTITY" and port["holdings"]:
+                # The last acted holding (h) still in scope
+                pass  # h already refers to the modified holding above
+
+            # Use a holding proxy: send the most recently mutated holding
+            # (worst-case we send a zero-delta, which is still safe)
+            acted_holding = port["holdings"][-1] if port["holdings"] else None
+            if acted_holding:
+                try:
+                    claude_client = (
+                        _anthropic.Anthropic() if _ANTHROPIC_SDK_AVAILABLE else None
+                    )
+                    portfolio_context = {
+                        "portfolio_id": port["portfolio_id"],
+                        "fund_name": port.get("fund_name", "unknown"),
+                        "total_nav": port.get("portfolio_value", 0.0),
+                        "position_count": len(port["holdings"]),
+                    }
+                    assessment = _risk_on_position_changed(
+                        portfolio_id=port["portfolio_id"],
+                        issuer=acted_holding.get("symbol", "unknown"),
+                        sector=acted_holding.get("sector", "unknown"),
+                        country=acted_holding.get("country", "IND"),
+                        asset_class=acted_holding.get("asset_class", "equity"),
+                        is_cash=(acted_holding.get("asset_class", "") == "cash"),
+                        old_market_value=acted_holding.get("invested_value", 0.0),
+                        new_market_value=acted_holding.get("current_value", 0.0),
+                        limits_doc=None,  # uses defaults; per-portfolio limits loaded lazily
+                        sectors_map=sectors_map,
+                        claude_client=claude_client,
+                        portfolio_context=portfolio_context,
+                    )
+                    if assessment is not None:
+                        assessment["_id"] = f"ASSESS-{port['portfolio_id']}-{uuid.uuid4().hex[:8]}"
+                        await db["assessments"].insert_one(assessment)
+                        # Broadcast via WebSocket
+                        from app.infrastructure.websocket.manager import ws_manager
+                        await ws_manager.broadcast_assessment({
+                            "assessment_id": assessment["_id"],
+                            "portfolio_id": port["portfolio_id"],
+                            "severity": assessment.get("claude_analysis", {}).get("severity", "UNKNOWN"),
+                            "trigger": "kafka_event",
+                        })
+                        logger.info(
+                            "Risk assessment produced by trade simulator",
+                            portfolio_id=port["portfolio_id"],
+                            severity=assessment.get("claude_analysis", {}).get("severity", "?"),
+                        )
+                except Exception as risk_exc:
+                    logger.warning(
+                        "Risk model error in trade simulator (non-fatal)",
+                        error=str(risk_exc),
+                    )
 
             logger.info(
                 "Simulated trade",

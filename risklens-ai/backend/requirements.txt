@@ -17,6 +17,7 @@ pymongo==4.8.0
 aiokafka==0.10.0
 
 # --- AI / LLM ---
+anthropic>=0.40.0          # direct SDK for Kafka hot-path (tool_use + prompt caching)
 langchain==0.3.0
 langchain-anthropic==0.2.0
 langchain-core==0.3.0

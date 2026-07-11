@@ -10,7 +10,10 @@ from typing import Optional
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.output_parsers import JsonOutputParser
-from langchain.callbacks.tracers import LangChainTracer
+try:
+    from langchain.callbacks.tracers import LangChainTracer
+except ImportError:
+    LangChainTracer = None  # optional — only used for LangSmith tracing
 from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.infrastructure.ai.prompt_templates import (
@@ -190,3 +193,230 @@ def get_claude_client() -> ClaudeClient:
     if _claude_client is None:
         _claude_client = ClaudeClient()
     return _claude_client
+
+
+# ============================================================================
+# Direct-SDK Claude client — Kafka hot-path (kafka_risk_service.py)
+#
+# Uses the `anthropic` package directly (not LangChain) for:
+#   - Tool-use / structured output via emit_risk_assessment tool
+#   - Prompt caching on the static SYSTEM_PROMPT
+#   - 3-tier fallback: Sonnet → Haiku → rule-engine-only
+#
+# Covers FR-11 (identify/explain breaches), FR-12 (severity verdict),
+# FR-13 (confidence score), FR-14 (human-readable rationale).
+#
+# Critical design rule (Phase 2, Step 10.1): the rule engine did the math.
+# This code NEVER asks Claude to compute a percentage, compare a number to
+# a limit, or do arithmetic of any kind. It receives an already-filtered
+# facts object (only BREACH/WARNING/FLAGGED rows) and asks for judgment.
+# ============================================================================
+
+import time as _time
+from dataclasses import dataclass as _dataclass
+
+try:
+    import anthropic as _anthropic
+    _ANTHROPIC_AVAILABLE = True
+except ImportError:
+    _ANTHROPIC_AVAILABLE = False
+    logger.warning(
+        "anthropic package not installed — Kafka-path Claude calls will use rule-engine fallback. "
+        "Run: pip install anthropic"
+    )
+
+_PRIMARY_MODEL = "claude-sonnet-4-20250514"
+_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
+_MAX_RETRIES = 3
+_RETRY_DELAYS_SEC = [1, 3, 5]
+
+# Kept short and STATIC on purpose — this is what gets prompt-cached.
+# Any per-portfolio detail belongs in the user turn, never here, or
+# the cache never hits.
+_SYSTEM_PROMPT = (
+    "You are a senior portfolio risk analyst at a top-tier asset management firm. "
+    "You receive PRE-COMPUTED concentration, correlation, and volatility facts about a portfolio "
+    "— never raw positions — and produce a structured risk assessment for a portfolio manager and risk desk.\n\n"
+    "Rules:\n"
+    "1. Never recompute or restate percentages beyond what is given to you.\n"
+    "2. Assess severity considering how multiple flagged signals interact, not each one in isolation.\n"
+    "3. Confidence should be LOWER when signals conflict or are marginal, HIGHER when the picture is unambiguous.\n"
+    "4. Rationale must be 2-3 sentences, written for a PM who has 15 seconds to read it.\n"
+    "5. Recommended actions must be specific (name the entity, the direction, and roughly how much) — never generic advice.\n"
+    "6. Output ONLY valid JSON matching the provided schema. No prose outside the JSON."
+)
+
+_OUTPUT_TOOL = {
+    "name": "emit_risk_assessment",
+    "description": "Return the structured portfolio risk assessment.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "severity": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+            "confidence": {"type": "number", "minimum": 0.0, "maximum": 1.0},
+            "rationale": {"type": "string"},
+            "breach_analysis": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "type": {"type": "string"},
+                        "entity": {"type": "string"},
+                        "assessment": {"type": "string"},
+                        "risk_level": {"type": "string", "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]},
+                    },
+                    "required": ["type", "entity", "assessment", "risk_level"],
+                },
+            },
+            "volatility_context": {"type": "string"},
+            "historical_pattern": {"type": "string"},
+            "recommended_actions": {"type": "array", "items": {"type": "string"}},
+            "estimated_review_time_minutes": {"type": "integer"},
+            "overall_verdict": {"type": "string"},
+        },
+        "required": [
+            "severity", "confidence", "rationale", "breach_analysis",
+            "volatility_context", "historical_pattern",
+            "recommended_actions", "estimated_review_time_minutes",
+            "overall_verdict",
+        ],
+    },
+}
+
+
+@_dataclass
+class ClaudeAnalysisResult:
+    """Result from the direct-SDK Claude call (Kafka hot-path).
+    Distinct from ClaudeAnalysis (Pydantic model used by REST path).
+    """
+    claude_analysis: dict
+    model_info: dict
+    ai_unavailable: bool = False
+
+
+def _build_user_turn(portfolio_context: dict, facts: dict) -> str:
+    """facts is ALREADY filtered to non-OK rows by kafka_risk_service —
+    this function does not do that filtering itself, to keep the 'facts
+    vs judgment' boundary in one place."""
+    import json as _json
+    return (
+        f"### Portfolio Context\n{_json.dumps(portfolio_context, indent=2)}\n\n"
+        f"### Flagged Concentration / Correlation / Volatility Facts\n"
+        f"{_json.dumps(facts, indent=2)}\n\n"
+        "Analyze the above and call emit_risk_assessment with your assessment."
+    )
+
+
+def _call_sdk_model(client, model: str, portfolio_context: dict, facts: dict) -> dict:
+    response = client.messages.create(
+        model=model,
+        max_tokens=1024,
+        system=[
+            {
+                "type": "text",
+                "text": _SYSTEM_PROMPT,
+                "cache_control": {"type": "ephemeral"},  # system prompt repeats every call
+            }
+        ],
+        tools=[_OUTPUT_TOOL],
+        tool_choice={"type": "tool", "name": "emit_risk_assessment"},
+        messages=[{"role": "user", "content": _build_user_turn(portfolio_context, facts)}],
+    )
+    tool_use_block = next(b for b in response.content if b.type == "tool_use")
+    return {
+        "output": tool_use_block.input,
+        "usage": {
+            "prompt_tokens": response.usage.input_tokens,
+            "completion_tokens": response.usage.output_tokens,
+            "cache_read_tokens": getattr(response.usage, "cache_read_input_tokens", 0),
+        },
+    }
+
+
+def _rule_engine_only_fallback(facts: dict) -> dict:
+    """Last resort — no AI rationale, but the system still produces a
+    usable, honest verdict instead of failing the demo outright."""
+    has_breach = any(
+        row.get("status") == "BREACH"
+        for rows in facts.values()
+        for row in (rows if isinstance(rows, list) else [])
+    )
+    severity = "HIGH" if has_breach else "MEDIUM"
+    return {
+        "severity": severity,
+        "confidence": 0.4,
+        "rationale": "AI analysis unavailable; severity derived from rule engine breach flags only.",
+        "breach_analysis": [],
+        "volatility_context": "unavailable",
+        "historical_pattern": "unavailable",
+        "recommended_actions": ["Manual review required — AI rationale unavailable."],
+        "estimated_review_time_minutes": 30,
+        "overall_verdict": f"{severity} RISK (rule-engine only, AI unavailable)",
+    }
+
+
+def call_claude_for_analysis(
+    client,
+    portfolio_context: dict,
+    facts: dict,
+) -> "ClaudeAnalysisResult":
+    """FR-11/12/13/14 entry point for the Kafka hot-path.
+
+    Implements the fallback hierarchy:
+      1. Sonnet, with retries + exponential backoff
+      2. Haiku (cheaper/faster) if Sonnet exhausts retries
+      3. Rule-engine-only assessment, marked ai_unavailable, if both fail
+
+    Never raises out to the caller — a demo cannot go down because
+    Claude had one bad response.
+
+    Args:
+        client: An ``anthropic.Anthropic`` instance. If None or anthropic
+                is not installed, falls back to rule-engine-only immediately.
+        portfolio_context: Dict with fund metadata (portfolio_id, fund_name, nav, etc.)
+        facts: Pre-filtered facts dict from ``build_claude_facts()`` — only
+               BREACH/WARNING/FLAGGED rows, never all-OK rows.
+
+    Returns:
+        ClaudeAnalysisResult with claude_analysis dict and model_info.
+    """
+    if not _ANTHROPIC_AVAILABLE or client is None:
+        return ClaudeAnalysisResult(
+            claude_analysis=_rule_engine_only_fallback(facts),
+            model_info={"model": "none", "fallback_reason": "anthropic package unavailable or client is None"},
+            ai_unavailable=True,
+        )
+
+    last_error: Optional[Exception] = None
+
+    for attempt in range(_MAX_RETRIES):
+        try:
+            start = _time.time()
+            result = _call_sdk_model(client, _PRIMARY_MODEL, portfolio_context, facts)
+            elapsed_ms = int((_time.time() - start) * 1000)
+            return ClaudeAnalysisResult(
+                claude_analysis=result["output"],
+                model_info={
+                    "model": _PRIMARY_MODEL,
+                    **result["usage"],
+                    "processing_time_ms": elapsed_ms,
+                    "attempt": attempt + 1,
+                },
+            )
+        except Exception as e:  # noqa: BLE001 — deliberately broad, this is a fallback boundary
+            last_error = e
+            if attempt < len(_RETRY_DELAYS_SEC):
+                _time.sleep(_RETRY_DELAYS_SEC[attempt])
+
+    try:
+        result = _call_sdk_model(client, _FALLBACK_MODEL, portfolio_context, facts)
+        return ClaudeAnalysisResult(
+            claude_analysis=result["output"],
+            model_info={"model": _FALLBACK_MODEL, **result["usage"], "fallback_reason": str(last_error)},
+        )
+    except Exception as e:  # noqa: BLE001
+        return ClaudeAnalysisResult(
+            claude_analysis=_rule_engine_only_fallback(facts),
+            model_info={"model": "none", "fallback_reason": str(e)},
+            ai_unavailable=True,
+        )
