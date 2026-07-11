@@ -9,8 +9,7 @@ import time
 from typing import Optional
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
-from langchain_core.output_parsers import JsonOutputParser
-from langchain.callbacks.tracers import LangChainTracer
+
 from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.infrastructure.ai.prompt_templates import (
@@ -18,6 +17,8 @@ from app.infrastructure.ai.prompt_templates import (
     get_system_prompt,
 )
 from app.domain.models.risk import ClaudeAnalysis, ModelInfo
+from app.infrastructure.ai.langsmith_config import get_tracer
+from app.infrastructure.ai.output_parsers import parse_claude_response
 
 logger = get_logger("infrastructure.claude")
 
@@ -33,7 +34,6 @@ class ClaudeClient:
             max_tokens=settings.claude_max_tokens,
             temperature=settings.claude_temperature,
         )
-        self._parser = JsonOutputParser()
         self._max_retries = 3
         self._retry_delays = [1, 3, 5]
 
@@ -65,6 +65,8 @@ class ClaudeClient:
         )
 
         start_time = time.time()
+        tracer = get_tracer(portfolio_context.get('portfolio_id'))
+        callbacks = [tracer] if tracer else []
 
         for attempt in range(self._max_retries):
             try:
@@ -73,31 +75,12 @@ class ClaudeClient:
                     HumanMessage(content=user_prompt),
                 ]
 
-                response = await self._model.ainvoke(messages)
+                response = await self._model.ainvoke(messages, config={"callbacks": callbacks})
                 elapsed_ms = int((time.time() - start_time) * 1000)
 
                 # Parse JSON from response
                 response_text = response.content
-                # Handle potential markdown code blocks
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[1].split("```")[0].strip()
-
-                parsed = json.loads(response_text)
-
-                # Build structured analysis
-                analysis = ClaudeAnalysis(
-                    severity=parsed.get("severity", "MEDIUM"),
-                    confidence=parsed.get("confidence", 0.5),
-                    rationale=parsed.get("rationale", ""),
-                    breach_analysis=parsed.get("breach_analysis", []),
-                    volatility_context=parsed.get("volatility_context", ""),
-                    historical_pattern=parsed.get("historical_pattern", ""),
-                    recommended_actions=parsed.get("recommended_actions", []),
-                    estimated_review_time_minutes=parsed.get("estimated_review_time_minutes", 15),
-                    overall_verdict=parsed.get("overall_verdict", ""),
-                )
+                analysis = parse_claude_response(response_text)
 
                 # Token usage info
                 model_info = ModelInfo(
@@ -119,9 +102,9 @@ class ClaudeClient:
 
                 return analysis, model_info
 
-            except json.JSONDecodeError as e:
+            except ValueError as e:
                 logger.warning(
-                    "Failed to parse Claude response as JSON",
+                    "Failed to parse Claude response",
                     attempt=attempt + 1,
                     error=str(e),
                 )
