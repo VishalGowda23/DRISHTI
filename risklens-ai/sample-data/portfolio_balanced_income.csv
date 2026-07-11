@@ -1,0 +1,13 @@
+symbol,name,asset_class,sector,country,quantity,current_price,avg_cost_price
+HDFCBANK.NS,HDFC Bank Ltd,equity,Banking,India,25000,1875.00,1700.00
+ICICIBANK.NS,ICICI Bank Ltd,equity,Banking,India,20000,1333.00,1200.00
+SBIN.NS,State Bank of India,equity,Banking,India,30000,850.00,780.00
+TCS.NS,Tata Consultancy Services,equity,Information Technology,India,8000,4333.00,4100.00
+INFY.NS,Infosys Limited,equity,Information Technology,India,12000,1666.00,1500.00
+RELIANCE.NS,Reliance Industries Ltd,equity,Energy,India,10000,1960.00,1800.00
+ITC.NS,ITC Limited,equity,Consumer Goods,India,40000,490.00,450.00
+HINDUNILVR.NS,Hindustan Unilever,equity,Consumer Goods,India,6000,2800.00,2600.00
+AAPL,Apple Inc,equity,Technology,USA,1000,220.00,190.00
+MSFT,Microsoft Corporation,equity,Technology,USA,800,450.00,420.00
+US_TREASURY_5Y,US Treasury Bond 5Y,bond,Government Bond,USA,200,50000.00,49000.00
+INR_CASH,Cash Reserves,cash,Cash,India,1,25000000.00,25000000.00

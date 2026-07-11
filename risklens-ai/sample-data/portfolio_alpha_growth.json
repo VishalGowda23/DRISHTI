@@ -1,0 +1,121 @@
+{
+  "fund_name": "Alpha Growth Opportunities Fund",
+  "fund_type": "Multi-Asset – Long Only",
+  "manager": "Ananya Sharma",
+  "currency": "INR",
+  "positions": [
+    {
+      "symbol": "RELIANCE.NS",
+      "name": "Reliance Industries Ltd",
+      "asset_class": "equity",
+      "sector": "Energy",
+      "country": "India",
+      "quantity": 50000,
+      "current_price": 1960.00,
+      "avg_cost_price": 1800.00
+    },
+    {
+      "symbol": "ONGC.NS",
+      "name": "Oil and Natural Gas Corporation",
+      "asset_class": "equity",
+      "sector": "Energy",
+      "country": "India",
+      "quantity": 80000,
+      "current_price": 900.00,
+      "avg_cost_price": 850.00
+    },
+    {
+      "symbol": "IOC.NS",
+      "name": "Indian Oil Corporation Ltd",
+      "asset_class": "equity",
+      "sector": "Energy",
+      "country": "India",
+      "quantity": 150000,
+      "current_price": 360.00,
+      "avg_cost_price": 340.00
+    },
+    {
+      "symbol": "TCS.NS",
+      "name": "Tata Consultancy Services",
+      "asset_class": "equity",
+      "sector": "Information Technology",
+      "country": "India",
+      "quantity": 15000,
+      "current_price": 4333.00,
+      "avg_cost_price": 4100.00
+    },
+    {
+      "symbol": "INFY.NS",
+      "name": "Infosys Limited",
+      "asset_class": "equity",
+      "sector": "Information Technology",
+      "country": "India",
+      "quantity": 30000,
+      "current_price": 1666.00,
+      "avg_cost_price": 1500.00
+    },
+    {
+      "symbol": "HDFCBANK.NS",
+      "name": "HDFC Bank Ltd",
+      "asset_class": "equity",
+      "sector": "Banking",
+      "country": "India",
+      "quantity": 40000,
+      "current_price": 1875.00,
+      "avg_cost_price": 1700.00
+    },
+    {
+      "symbol": "ICICIBANK.NS",
+      "name": "ICICI Bank Ltd",
+      "asset_class": "equity",
+      "sector": "Banking",
+      "country": "India",
+      "quantity": 45000,
+      "current_price": 1333.00,
+      "avg_cost_price": 1200.00
+    },
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 2500,
+      "current_price": 2200.00,
+      "avg_cost_price": 1900.00,
+      "currency": "USD"
+    },
+    {
+      "symbol": "MSFT",
+      "name": "Microsoft Corporation",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 1500,
+      "current_price": 3000.00,
+      "avg_cost_price": 2800.00,
+      "currency": "USD"
+    },
+    {
+      "symbol": "US_TREASURY_10Y",
+      "name": "US Treasury Bond 10Y",
+      "asset_class": "bond",
+      "sector": "Government Bond",
+      "country": "USA",
+      "quantity": 120,
+      "current_price": 100000.00,
+      "avg_cost_price": 98000.00,
+      "currency": "USD"
+    },
+    {
+      "symbol": "CASH_INR",
+      "name": "Cash (INR)",
+      "asset_class": "cash",
+      "sector": "Cash",
+      "country": "India",
+      "quantity": 1,
+      "current_price": 30600000.00,
+      "avg_cost_price": 30600000.00
+    }
+  ]
+}

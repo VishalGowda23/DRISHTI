@@ -1,0 +1,71 @@
+{
+  "fund_name": "Concentrated Tech Fund",
+  "fund_type": "Equity – Sector Specific",
+  "manager": "Raj Mehta",
+  "currency": "USD",
+  "positions": [
+    {
+      "symbol": "AAPL",
+      "name": "Apple Inc",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 10000,
+      "current_price": 220.00
+    },
+    {
+      "symbol": "MSFT",
+      "name": "Microsoft Corporation",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 8000,
+      "current_price": 450.00
+    },
+    {
+      "symbol": "GOOGL",
+      "name": "Alphabet Inc",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 6000,
+      "current_price": 185.00
+    },
+    {
+      "symbol": "NVDA",
+      "name": "NVIDIA Corporation",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 5000,
+      "current_price": 140.00
+    },
+    {
+      "symbol": "META",
+      "name": "Meta Platforms Inc",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 4000,
+      "current_price": 520.00
+    },
+    {
+      "symbol": "AMZN",
+      "name": "Amazon.com Inc",
+      "asset_class": "equity",
+      "sector": "Technology",
+      "country": "USA",
+      "quantity": 5000,
+      "current_price": 200.00
+    },
+    {
+      "symbol": "CASH_USD",
+      "name": "Cash (USD)",
+      "asset_class": "cash",
+      "sector": "Cash",
+      "country": "USA",
+      "quantity": 1,
+      "current_price": 500000.00
+    }
+  ]
+}

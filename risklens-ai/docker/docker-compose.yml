@@ -1,0 +1,135 @@
+version: "3.9"
+
+services:
+  # ---- MongoDB ----
+  mongodb:
+    image: mongo:7
+    container_name: risklens-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: risklens
+      MONGO_INITDB_ROOT_PASSWORD: risklens2026
+      MONGO_INITDB_DATABASE: risklens
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+    networks:
+      - risklens-network
+
+  # ---- MongoDB Admin UI ----
+  mongo-express:
+    image: mongo-express:1-20
+    container_name: risklens-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: risklens
+      ME_CONFIG_MONGODB_ADMINPASSWORD: risklens2026
+      ME_CONFIG_MONGODB_URL: mongodb://risklens:risklens2026@mongodb:27017/
+      ME_CONFIG_BASICAUTH: "false"
+    depends_on:
+      - mongodb
+    networks:
+      - risklens-network
+
+  # ---- Zookeeper (Kafka dependency) ----
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: risklens-zookeeper
+    restart: unless-stopped
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - risklens-network
+
+  # ---- Apache Kafka ----
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: risklens-kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+    networks:
+      - risklens-network
+
+  # ---- Kafka UI ----
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: risklens-kafka-ui
+    restart: unless-stopped
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: risklens-local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+      KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
+    depends_on:
+      - kafka
+    networks:
+      - risklens-network
+
+  # ---- FastAPI Backend ----
+  risklens-api:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: risklens-api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ../.env
+    environment:
+      MONGODB_URI: mongodb://risklens:risklens2026@mongodb:27017/risklens?authSource=admin
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+    depends_on:
+      - mongodb
+      - kafka
+    volumes:
+      - ../backend:/app
+    networks:
+      - risklens-network
+
+  # ---- React Frontend ----
+  risklens-ui:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: risklens-ui
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      VITE_API_URL: http://localhost:8000
+      VITE_WS_URL: ws://localhost:8000
+    depends_on:
+      - risklens-api
+    volumes:
+      - ../frontend:/app
+      - /app/node_modules
+    networks:
+      - risklens-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  risklens-network:
+    driver: bridge
