@@ -4,30 +4,30 @@ All Claude prompt templates centralized here for version control and easy iterat
 """
 
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List
 
+
+import os
+from pathlib import Path
+
+PROMPTS_DIR = Path(__file__).parent.parent.parent.parent.parent / "prompts"
 
 def get_system_prompt() -> str:
     """System prompt that defines Claude's role and output format."""
-    return """You are a senior portfolio risk analyst at a top-tier asset management firm with 15+ years of experience in risk management, concentration analysis, and regulatory compliance.
-
-Your role is to analyze pre-computed portfolio concentration data and produce structured risk assessments for portfolio managers and risk desks.
-
-CRITICAL RULES:
-1. You are given pre-computed numbers from a rule engine. DO NOT recalculate percentages.
-2. Your job is to INTERPRET the data, EXPLAIN the risk, and RECOMMEND actions.
-3. Always consider the interaction between multiple breaches/warnings — compound risk is worse than isolated risk.
-4. Factor in volatility context when available — rising volatility amplifies concentration risk.
-5. Be specific in recommendations — "reduce Reliance by 1.8% NAV" is better than "reduce exposure".
-6. Your confidence score should reflect uncertainty: 0.9+ for clear breaches, 0.5-0.7 for ambiguous signals.
-
-Your output MUST be valid JSON matching the schema provided. No markdown, no explanation outside the JSON."""
+    prompt_path = PROMPTS_DIR / "severity_scoring.md"
+    try:
+        with open(prompt_path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        # Fallback if running from a weird directory
+        return "You are a senior portfolio risk analyst. Output valid JSON."
 
 
 def build_concentration_analysis_prompt(
     portfolio_context: Dict[str, Any],
     rule_engine_results: Dict[str, Any],
     market_context: Dict[str, Any],
+    top_positions: List[Dict[str, Any]],
 ) -> str:
     """Build the user prompt for concentration analysis.
 
@@ -37,48 +37,32 @@ def build_concentration_analysis_prompt(
     # Filter to only non-OK results to save tokens
     filtered_results = _filter_significant_results(rule_engine_results)
 
-    prompt = f"""### Portfolio Context
-- Portfolio ID: {portfolio_context.get('portfolio_id', 'N/A')}
-- Fund Name: {portfolio_context.get('fund_name', 'N/A')}
-- Fund Type: {portfolio_context.get('fund_type', 'N/A')}
-- Total NAV: {portfolio_context.get('total_nav', 0):,.2f}
-- Currency: {portfolio_context.get('currency', 'INR')}
-- Number of Positions: {portfolio_context.get('position_count', 0)}
-- Assessment Timestamp: {portfolio_context.get('timestamp', 'N/A')}
+    prompt_path = PROMPTS_DIR / "concentration_analysis.md"
+    try:
+        with open(prompt_path, "r") as f:
+            template = f.read()
+    except FileNotFoundError:
+        template = "{rule_engine_results}"
+        
+    from app.infrastructure.ai.output_parsers import get_assessment_parser
+    parser = get_assessment_parser()
+    format_instructions = parser.get_format_instructions()
 
-### Concentration Analysis Results (Pre-Computed by Rule Engine)
-{json.dumps(filtered_results, indent=2, default=str)}
-
-### Market Context
-{json.dumps(market_context, indent=2, default=str) if market_context else "No market context available."}
-
-### Instructions
-Analyze the above concentration data and produce a risk assessment. Focus on:
-1. The severity of each breach — is it marginal (just over limit) or critical (significantly over)?
-2. The interaction between multiple breaches/warnings — do they compound the risk?
-3. Volatility trends that amplify or mitigate concentration risk
-4. Correlation clusters that represent hidden, undiversified concentration
-5. Specific, actionable rebalancing recommendations with estimated NAV impact
-
-### Required Output (valid JSON only, no markdown wrapping):
-{{
-  "severity": "LOW | MEDIUM | HIGH | CRITICAL",
-  "confidence": <float 0.0-1.0>,
-  "rationale": "<2-3 sentence executive summary>",
-  "breach_analysis": [
-    {{
-      "type": "issuer_concentration | sector_concentration | geography_concentration | correlation_cluster",
-      "entity": "<name>",
-      "assessment": "<detailed 1-2 sentence explanation>",
-      "risk_level": "LOW | MEDIUM | HIGH | CRITICAL"
-    }}
-  ],
-  "volatility_context": "<assessment of relevant volatility signals>",
-  "historical_pattern": "<any relevant historical pattern observation>",
-  "recommended_actions": ["<specific action 1>", "<specific action 2>"],
-  "estimated_review_time_minutes": <int>,
-  "overall_verdict": "<one-line summary for dashboard display>"
-}}"""
+    prompt = template.format(
+        portfolio_id=portfolio_context.get('portfolio_id', 'N/A'),
+        fund_name=portfolio_context.get('fund_name', 'N/A'),
+        fund_type=portfolio_context.get('fund_type', 'N/A'),
+        total_nav=f"{portfolio_context.get('total_nav', 0):,.2f}",
+        currency=portfolio_context.get('currency', 'INR'),
+        position_count=portfolio_context.get('position_count', 0),
+        timestamp=portfolio_context.get('timestamp', 'N/A'),
+        rule_engine_results=json.dumps(filtered_results, indent=2, default=str),
+        market_context=json.dumps(market_context, indent=2, default=str) if market_context else "No market context available.",
+        top_positions=json.dumps(top_positions, indent=2, default=str) if top_positions else "No position details available."
+    )
+    
+    # Append format instructions to the end of the prompt
+    prompt += f"\n\n### Output Format\n{format_instructions}\n"
 
     return prompt
 
@@ -108,6 +92,7 @@ def _filter_significant_results(rule_engine_results: Dict[str, Any]) -> Dict[str
     filtered["summary"] = {
         "total_breaches": rule_engine_results.get("total_breaches", 0),
         "total_warnings": rule_engine_results.get("total_warnings", 0),
+        "historical_var_95": rule_engine_results.get("historical_var_95", 0.0),
     }
 
     return filtered

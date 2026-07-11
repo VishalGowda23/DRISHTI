@@ -40,6 +40,7 @@ class RuleEngineResults(BaseModel):
     geography_checks: List[ConcentrationCheck] = []
     asset_class_checks: List[ConcentrationCheck] = []
     correlation_clusters: List[CorrelationCluster] = []
+    historical_var_95: float = 0.0
     total_breaches: int = 0
     total_warnings: int = 0
 
@@ -54,6 +55,14 @@ class BreachAnalysis(BaseModel):
     risk_level: Severity
 
 
+class ProposedTrade(BaseModel):
+    """A proposed trade suggested by the AI to rebalance the portfolio."""
+    action: str = Field(..., description="BUY or SELL")
+    symbol: str = Field(..., description="Ticker symbol to trade")
+    amount_pct: float = Field(..., description="Percentage of NAV to trade")
+    rationale: str = Field(..., description="Reason for this trade")
+
+
 class ClaudeAnalysis(BaseModel):
     """Structured output from Claude AI analysis."""
     severity: Severity
@@ -63,6 +72,7 @@ class ClaudeAnalysis(BaseModel):
     volatility_context: str = ""
     historical_pattern: str = ""
     recommended_actions: List[str] = []
+    proposed_trades: List[ProposedTrade] = []
     estimated_review_time_minutes: int = 15
     overall_verdict: str = ""
 

@@ -10,10 +10,12 @@ from typing import Optional
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import SystemMessage, HumanMessage
 from langchain_core.output_parsers import JsonOutputParser
+
 try:
     from langchain.callbacks.tracers import LangChainTracer
 except ImportError:
     LangChainTracer = None  # optional — only used for LangSmith tracing
+
 from app.core.config import get_settings
 from app.core.logger import get_logger
 from app.infrastructure.ai.prompt_templates import (
@@ -21,6 +23,8 @@ from app.infrastructure.ai.prompt_templates import (
     get_system_prompt,
 )
 from app.domain.models.risk import ClaudeAnalysis, ModelInfo
+from app.infrastructure.ai.langsmith_config import get_tracer
+from app.infrastructure.ai.output_parsers import parse_claude_response
 
 logger = get_logger("infrastructure.claude")
 
@@ -36,14 +40,17 @@ class ClaudeClient:
             max_tokens=settings.claude_max_tokens,
             temperature=settings.claude_temperature,
         )
-        self._parser = JsonOutputParser()
         self._max_retries = 3
         self._retry_delays = [1, 3, 5]
+        # In-memory cache for cost and rate limit optimization: hash_key -> (ClaudeAnalysis, ModelInfo, timestamp)
+        from cachetools import TTLCache
+        self._cache = TTLCache(maxsize=1000, ttl=900)  # 15 minutes TTL, max 1000 items to prevent memory leaks
 
     async def analyze_portfolio_risk(
         self,
         portfolio_context: dict,
         rule_engine_results: dict,
+        top_positions: list[dict],
         market_context: Optional[dict] = None,
     ) -> tuple[ClaudeAnalysis, ModelInfo]:
         """Send portfolio data to Claude for AI-powered risk analysis.
@@ -55,19 +62,49 @@ class ClaudeClient:
         Args:
             portfolio_context: Dict with portfolio_id, fund_name, fund_type, total_nav, etc.
             rule_engine_results: Pre-computed concentration checks from rule engine
+            top_positions: Sorted and aggregated list of major positions
             market_context: Optional dict with volatility, price changes
 
         Returns:
             Tuple of (ClaudeAnalysis, ModelInfo)
         """
+        # Generate cache key based on rule engine results and market context to save LLM tokens
+        import hashlib
+        
+        payload_str = json.dumps(
+            {"rules": rule_engine_results, "market": market_context or {}},
+            sort_keys=True,
+            default=str
+        )
+        cache_key = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+
+        # Check Cache Hit
+        if cache_key in self._cache:
+            cached_analysis, cached_model_info = self._cache[cache_key]
+            logger.info(
+                "LLM cache hit! Returning cached risk analysis.",
+                portfolio_id=portfolio_context.get("portfolio_id")
+            )
+            return cached_analysis, cached_model_info
+
+        from app.core.config import get_settings
+        settings = get_settings()
+        api_key = settings.anthropic_api_key
+        if not api_key or len(api_key) < 20:
+            logger.error("Missing or invalid ANTHROPIC_API_KEY. Failing fast without retries.")
+            return self._fallback_analysis(rule_engine_results), ModelInfo()
+
         system_prompt = get_system_prompt()
         user_prompt = build_concentration_analysis_prompt(
             portfolio_context=portfolio_context,
             rule_engine_results=rule_engine_results,
             market_context=market_context or {},
+            top_positions=top_positions,
         )
 
         start_time = time.time()
+        tracer = get_tracer(portfolio_context.get('portfolio_id'))
+        callbacks = [tracer] if tracer else []
 
         for attempt in range(self._max_retries):
             try:
@@ -76,31 +113,12 @@ class ClaudeClient:
                     HumanMessage(content=user_prompt),
                 ]
 
-                response = await self._model.ainvoke(messages)
+                response = await self._model.ainvoke(messages, config={"callbacks": callbacks})
                 elapsed_ms = int((time.time() - start_time) * 1000)
 
                 # Parse JSON from response
                 response_text = response.content
-                # Handle potential markdown code blocks
-                if "```json" in response_text:
-                    response_text = response_text.split("```json")[1].split("```")[0].strip()
-                elif "```" in response_text:
-                    response_text = response_text.split("```")[1].split("```")[0].strip()
-
-                parsed = json.loads(response_text)
-
-                # Build structured analysis
-                analysis = ClaudeAnalysis(
-                    severity=parsed.get("severity", "MEDIUM"),
-                    confidence=parsed.get("confidence", 0.5),
-                    rationale=parsed.get("rationale", ""),
-                    breach_analysis=parsed.get("breach_analysis", []),
-                    volatility_context=parsed.get("volatility_context", ""),
-                    historical_pattern=parsed.get("historical_pattern", ""),
-                    recommended_actions=parsed.get("recommended_actions", []),
-                    estimated_review_time_minutes=parsed.get("estimated_review_time_minutes", 15),
-                    overall_verdict=parsed.get("overall_verdict", ""),
-                )
+                analysis = parse_claude_response(response_text)
 
                 # Token usage info
                 model_info = ModelInfo(
@@ -120,11 +138,13 @@ class ClaudeClient:
                     completion_tokens=model_info.completion_tokens,
                 )
 
+                # Cache the results
+                self._cache[cache_key] = (analysis, model_info)
                 return analysis, model_info
 
-            except json.JSONDecodeError as e:
+            except ValueError as e:
                 logger.warning(
-                    "Failed to parse Claude response as JSON",
+                    "Failed to parse Claude response",
                     attempt=attempt + 1,
                     error=str(e),
                 )

@@ -111,12 +111,64 @@ export default function PortfolioDetail() {
           <h3 style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>🤖 AI Analysis</h3>
           <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>{claude.rationale}</p>
           <p style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 8 }}>Verdict: {claude.overall_verdict}</p>
+          
           {claude.recommended_actions?.length > 0 && (
-            <div>
+            <div style={{ marginBottom: 'var(--space-md)' }}>
               <p style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 4 }}>Recommended Actions:</p>
               <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                 {claude.recommended_actions.map((action, i) => <li key={i} style={{ marginBottom: 4 }}>{action}</li>)}
               </ul>
+            </div>
+          )}
+
+          {/* AI Proposed Trades for Agentic Auto-Hedger */}
+          {claude.proposed_trades?.length > 0 && (
+            <div style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--bg-subtle)', borderRadius: 8 }}>
+              <h4 style={{ fontWeight: 600, marginBottom: 'var(--space-sm)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <TrendingUp size={16} color="var(--accent-primary)" />
+                AI Hedging Strategy
+              </h4>
+              <table style={{ marginBottom: 'var(--space-sm)' }}>
+                <thead>
+                  <tr>
+                    <th>Action</th>
+                    <th>Symbol</th>
+                    <th>% NAV</th>
+                    <th>Rationale</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {claude.proposed_trades.map((trade, i) => (
+                    <tr key={i}>
+                      <td style={{ fontWeight: 'bold', color: trade.action === 'SELL' ? 'var(--color-critical)' : 'var(--color-success)' }}>
+                        {trade.action}
+                      </td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{trade.symbol}</td>
+                      <td>{trade.amount_pct}%</td>
+                      <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{trade.rationale}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <button 
+                className="btn btn-primary"
+                onClick={async () => {
+                  try {
+                    const { agentApi } = await import('../services/api');
+                    await agentApi.executeRebalance({
+                      portfolio_id: id,
+                      assessment_id: assessment._id,
+                      trades: claude.proposed_trades
+                    });
+                    toast.success('Agentic rebalance executed successfully!');
+                    fetchPortfolio(); // Refresh
+                  } catch (err) {
+                    toast.error(`Execution failed: ${err.message}`);
+                  }
+                }}
+              >
+                Execute AI Hedging Strategy
+              </button>
             </div>
           )}
         </div>

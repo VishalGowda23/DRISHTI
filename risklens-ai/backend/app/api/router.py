@@ -4,7 +4,7 @@ Collects all endpoint routers into a single API router.
 """
 
 from fastapi import APIRouter
-from app.api.v1 import portfolio, risk, alerts, config, audit, health, market
+from app.api.v1 import portfolio, risk, alerts, config, audit, health, market, agent
 
 api_router = APIRouter()
 
@@ -15,3 +15,4 @@ api_router.include_router(alerts.router, prefix="/alerts", tags=["Alerts"])
 api_router.include_router(config.router, prefix="/config", tags=["Configuration"])
 api_router.include_router(audit.router, prefix="/audit", tags=["Audit"])
 api_router.include_router(market.router, tags=["Market Data"])
+api_router.include_router(agent.router, prefix="/rebalance", tags=["Agentic Execution"])

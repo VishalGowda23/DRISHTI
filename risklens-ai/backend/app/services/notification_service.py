@@ -17,6 +17,9 @@ logger = get_logger("services.notification")
 class NotificationService:
     """Dispatches notifications to configured channels."""
 
+    # Class-level cache to debounce alerts across instances: (portfolio_id, breach_type, entity) -> timestamp
+    _alert_cache = {}
+
     async def send_notification(
         self,
         alert: dict,
@@ -35,22 +38,59 @@ class NotificationService:
         Returns:
             True if notification was sent successfully
         """
+        # Alert debouncing for external channels (email and jira) to avoid spamming teams
+        if channel in (CHANNEL_EMAIL, CHANNEL_JIRA):
+            portfolio_id = alert.get("portfolio_id")
+            breach_type = alert.get("breach_type")
+            entity = alert.get("breach_details", {}).get("entity", "")
+            cache_key = (portfolio_id, breach_type, entity)
+
+            now = datetime.utcnow().timestamp()
+            last_alert_time = self._alert_cache.get(cache_key)
+
+            if last_alert_time and (now - last_alert_time) < 900:  # 15-minute window
+                logger.info(
+                    "Alert notification debounced (suppressed to avoid alert fatigue)",
+                    portfolio_id=portfolio_id,
+                    breach_type=breach_type,
+                    entity=entity,
+                    channel=channel,
+                )
+                return True  # Suppress notification without throwing errors
+
+            self._alert_cache[cache_key] = now
+
+        success = False
         try:
             if channel == CHANNEL_EMAIL:
-                return await self._send_email(alert, assessment, portfolio)
+                success = await self._send_email(alert, assessment, portfolio)
             elif channel == CHANNEL_JIRA:
-                return await self._create_jira_ticket(alert, assessment, portfolio)
+                success = await self._create_jira_ticket(alert, assessment, portfolio)
             elif channel == CHANNEL_WEBSOCKET:
-                return await self._send_websocket(alert)
+                success = await self._send_websocket(alert)
             elif channel == CHANNEL_DASHBOARD:
                 # Dashboard updates happen via WebSocket broadcast in risk_analysis_service
-                return True
-            else:
-                logger.warning(f"Unknown notification channel: {channel}")
-                return False
+                success = True
         except Exception as e:
             logger.error(f"Notification failed on channel {channel}", error=str(e))
-            return False
+            success = False
+
+        if not success:
+            try:
+                from app.infrastructure.database.mongodb import get_database
+                db = get_database()
+                await db.dead_letter_queue.insert_one({
+                    "alert_id": alert.get("_id"),
+                    "portfolio_id": alert.get("portfolio_id"),
+                    "channel": channel,
+                    "failed_at": datetime.utcnow().isoformat(),
+                    "alert_payload": alert,
+                    "status": "pending_retry"
+                })
+                logger.info(f"Alert {alert.get('_id')} routed to Dead Letter Queue for {channel}")
+            except Exception as dlq_e:
+                logger.error("Failed to write to Dead Letter Queue", error=str(dlq_e))
+        return success
 
     async def _send_email(self, alert: dict, assessment: dict, portfolio: dict) -> bool:
         """Send email notification."""

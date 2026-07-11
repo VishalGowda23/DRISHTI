@@ -73,6 +73,11 @@ export const auditApi = {
   getLogs: (params) => api.get('/audit/logs', { params }),
 };
 
+// --- Agent API ---
+export const agentApi = {
+  executeRebalance: (data) => api.post('/rebalance/execute', data),
+};
+
 // --- Health API ---
 export const healthApi = {
   check: () => api.get('/health'),

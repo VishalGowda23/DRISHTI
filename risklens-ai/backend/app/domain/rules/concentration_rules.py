@@ -66,16 +66,22 @@ def check_issuer_concentration(
     if total_nav <= 0:
         return []
 
-    # Aggregate by issuer name
+    # Aggregate by issuer name (netting long/short positions)
     issuer_values: Dict[str, float] = defaultdict(float)
     for pos in positions:
-        issuer_values[pos.get("name", "Unknown")] += pos.get("market_value", 0)
+        val = pos.get("market_value", 0.0)
+        # Netting: subtract exposure if position_type is short
+        if str(pos.get("position_type", "long")).lower() == "short":
+            issuer_values[pos.get("name", "Unknown")] -= val
+        else:
+            issuer_values[pos.get("name", "Unknown")] += val
 
     results = []
-    for issuer, value in sorted(issuer_values.items(), key=lambda x: -x[1]):
-        nav_pct = (value / total_nav) * 100
+    for issuer, value in sorted(issuer_values.items(), key=lambda x: -abs(x[1])):
+        nav_pct = (abs(value) / total_nav) * 100
+        entity_name = f"{issuer} (Net Short)" if value < 0 else issuer
         check = _check_concentration(
-            entity=issuer,
+            entity=entity_name,
             nav_pct=nav_pct,
             limit=limit,
             warning_buffer=warning_buffer,
@@ -96,16 +102,22 @@ def check_sector_concentration(
     if total_nav <= 0:
         return []
 
+    # Aggregate by sector name (netting long/short positions)
     sector_values: Dict[str, float] = defaultdict(float)
     for pos in positions:
         sector = pos.get("sector", "Unknown")
-        sector_values[sector] += pos.get("market_value", 0)
+        val = pos.get("market_value", 0.0)
+        if str(pos.get("position_type", "long")).lower() == "short":
+            sector_values[sector] -= val
+        else:
+            sector_values[sector] += val
 
     results = []
-    for sector, value in sorted(sector_values.items(), key=lambda x: -x[1]):
-        nav_pct = (value / total_nav) * 100
+    for sector, value in sorted(sector_values.items(), key=lambda x: -abs(x[1])):
+        nav_pct = (abs(value) / total_nav) * 100
+        entity_name = f"{sector} (Net Short)" if value < 0 else sector
         check = _check_concentration(
-            entity=sector,
+            entity=entity_name,
             nav_pct=nav_pct,
             limit=limit,
             warning_buffer=warning_buffer,
@@ -126,16 +138,22 @@ def check_geography_concentration(
     if total_nav <= 0:
         return []
 
+    # Aggregate by country name (netting long/short positions)
     country_values: Dict[str, float] = defaultdict(float)
     for pos in positions:
         country = pos.get("country", "Unknown")
-        country_values[country] += pos.get("market_value", 0)
+        val = pos.get("market_value", 0.0)
+        if str(pos.get("position_type", "long")).lower() == "short":
+            country_values[country] -= val
+        else:
+            country_values[country] += val
 
     results = []
-    for country, value in sorted(country_values.items(), key=lambda x: -x[1]):
-        nav_pct = (value / total_nav) * 100
+    for country, value in sorted(country_values.items(), key=lambda x: -abs(x[1])):
+        nav_pct = (abs(value) / total_nav) * 100
+        entity_name = f"{country} (Net Short)" if value < 0 else country
         check = _check_concentration(
-            entity=country,
+            entity=entity_name,
             nav_pct=nav_pct,
             limit=limit,
             warning_buffer=warning_buffer,
@@ -156,16 +174,22 @@ def check_asset_class_concentration(
     if total_nav <= 0:
         return []
 
+    # Aggregate by asset class name (netting long/short positions)
     class_values: Dict[str, float] = defaultdict(float)
     for pos in positions:
         asset_class = pos.get("asset_class", "unknown")
-        class_values[asset_class] += pos.get("market_value", 0)
+        val = pos.get("market_value", 0.0)
+        if str(pos.get("position_type", "long")).lower() == "short":
+            class_values[asset_class] -= val
+        else:
+            class_values[asset_class] += val
 
     results = []
-    for asset_class, value in sorted(class_values.items(), key=lambda x: -x[1]):
-        nav_pct = (value / total_nav) * 100
+    for asset_class, value in sorted(class_values.items(), key=lambda x: -abs(x[1])):
+        nav_pct = (abs(value) / total_nav) * 100
+        entity_name = f"{asset_class} (Net Short)" if value < 0 else asset_class
         check = _check_concentration(
-            entity=asset_class,
+            entity=entity_name,
             nav_pct=nav_pct,
             limit=limit,
             warning_buffer=warning_buffer,
