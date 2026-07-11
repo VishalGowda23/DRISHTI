@@ -10,6 +10,9 @@
 ### Concentration Analysis Results (Pre-Computed by Rule Engine)
 {rule_engine_results}
 
+### Top Portfolio Positions
+{top_positions}
+
 ### Market Context
 {market_context}
 
@@ -19,7 +22,7 @@ Analyze the above concentration data and produce a risk assessment. Focus on:
 2. The interaction between multiple breaches/warnings — do they compound the risk?
 3. Volatility trends that amplify or mitigate concentration risk
 4. Correlation clusters that represent hidden, undiversified concentration
-5. Specific, actionable rebalancing recommendations with estimated NAV impact
+5. Specific, actionable rebalancing recommendations, including proposing precise trades (`BUY` or `SELL` with target percentage of NAV) to rebalance and neutralize the breach.
 
 ### Required Output (valid JSON only, no markdown wrapping):
 {{
@@ -37,6 +40,14 @@ Analyze the above concentration data and produce a risk assessment. Focus on:
   "volatility_context": "<assessment of relevant volatility signals>",
   "historical_pattern": "<any relevant historical pattern observation>",
   "recommended_actions": ["<specific action 1>", "<specific action 2>"],
+  "proposed_trades": [
+    {{
+      "action": "BUY | SELL",
+      "symbol": "<ticker symbol to trade>",
+      "amount_pct": <float representing target percentage of portfolio NAV to trade>,
+      "rationale": "<brief explanation of why this trade helps rebalance>"
+    }}
+  ],
   "estimated_review_time_minutes": <int>,
   "overall_verdict": "<one-line summary for dashboard display>"
 }}

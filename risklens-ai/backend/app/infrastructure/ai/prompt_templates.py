@@ -4,7 +4,7 @@ All Claude prompt templates centralized here for version control and easy iterat
 """
 
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 
 import os
@@ -27,6 +27,7 @@ def build_concentration_analysis_prompt(
     portfolio_context: Dict[str, Any],
     rule_engine_results: Dict[str, Any],
     market_context: Dict[str, Any],
+    top_positions: List[Dict[str, Any]],
 ) -> str:
     """Build the user prompt for concentration analysis.
 
@@ -43,6 +44,10 @@ def build_concentration_analysis_prompt(
     except FileNotFoundError:
         template = "{rule_engine_results}"
         
+    from app.infrastructure.ai.output_parsers import get_assessment_parser
+    parser = get_assessment_parser()
+    format_instructions = parser.get_format_instructions()
+
     prompt = template.format(
         portfolio_id=portfolio_context.get('portfolio_id', 'N/A'),
         fund_name=portfolio_context.get('fund_name', 'N/A'),
@@ -52,8 +57,12 @@ def build_concentration_analysis_prompt(
         position_count=portfolio_context.get('position_count', 0),
         timestamp=portfolio_context.get('timestamp', 'N/A'),
         rule_engine_results=json.dumps(filtered_results, indent=2, default=str),
-        market_context=json.dumps(market_context, indent=2, default=str) if market_context else "No market context available."
+        market_context=json.dumps(market_context, indent=2, default=str) if market_context else "No market context available.",
+        top_positions=json.dumps(top_positions, indent=2, default=str) if top_positions else "No position details available."
     )
+    
+    # Append format instructions to the end of the prompt
+    prompt += f"\n\n### Output Format\n{format_instructions}\n"
 
     return prompt
 
@@ -83,6 +92,7 @@ def _filter_significant_results(rule_engine_results: Dict[str, Any]) -> Dict[str
     filtered["summary"] = {
         "total_breaches": rule_engine_results.get("total_breaches", 0),
         "total_warnings": rule_engine_results.get("total_warnings", 0),
+        "historical_var_95": rule_engine_results.get("historical_var_95", 0.0),
     }
 
     return filtered

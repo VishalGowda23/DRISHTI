@@ -103,6 +103,20 @@ class RiskAnalysisService:
         limits = RiskLimits(**config.get("limits", {}))
         warning_buffer = config.get("warning_buffer_pct", 3.0)
 
+        # Dynamic Limit Adjustment based on VIX (Volatility Index) stress testing
+        try:
+            yahoo = get_yahoo_client()
+            vix_data = yahoo.get_current_prices(["^VIX"])
+            vix_price = vix_data.get("^VIX", {}).get("price", 0)
+            if vix_price > 25.0:  # Stress threshold
+                logger.info("High market volatility detected (VIX > 25). Tightening risk limits by 20% to manage market stress.", vix_price=vix_price)
+                limits.single_issuer_max = round(limits.single_issuer_max * 0.8, 2)
+                limits.sector_max = round(limits.sector_max * 0.8, 2)
+                limits.geography_max = round(limits.geography_max * 0.8, 2)
+                limits.asset_class_max = round(limits.asset_class_max * 0.8, 2)
+        except Exception as e:
+            logger.warning("Failed to fetch VIX index for dynamic limits, using default limits", error=str(e))
+
         # --- Step 4: Run rule-based concentration checks ---
         positions_dicts = [p for p in positions]
         rule_results = run_all_concentration_checks(
@@ -112,17 +126,40 @@ class RiskAnalysisService:
             warning_buffer=warning_buffer,
         )
 
-        # --- Step 5: Run correlation analysis ---
+        # --- Step 5: Run correlation analysis & Historical VaR ---
         equity_symbols = [p["symbol"] for p in positions if p.get("asset_class") == "equity" and p.get("symbol")]
         if len(equity_symbols) >= 3:
             try:
                 yahoo = get_yahoo_client()
-                returns = yahoo.get_historical_returns(equity_symbols, days=30)
+                # Fetch 252 trading days (approx 1 year) for VaR and correlation
+                returns = yahoo.get_historical_returns(equity_symbols, days=252)
                 corr_matrix = compute_correlation_matrix(returns)
                 clusters = detect_correlation_clusters(corr_matrix, limits.correlation_threshold)
                 rule_results.correlation_clusters = clusters
+
+                # Historical Simulation VaR (95%)
+                import numpy as np
+                weights = {}
+                for p in positions:
+                    if p.get("symbol") in equity_symbols and total_nav > 0:
+                        weights[p["symbol"]] = p.get("market_value", 0) / total_nav
+                
+                # Align return vectors (find minimum length across all symbols)
+                min_len = min(len(r) for r in returns.values()) if returns else 0
+                if min_len > 0:
+                    portfolio_daily_returns = []
+                    for i in range(min_len):
+                        day_return = sum(weights.get(sym, 0) * returns[sym][i] for sym in equity_symbols if sym in returns)
+                        portfolio_daily_returns.append(day_return)
+                    
+                    if portfolio_daily_returns:
+                        # 95% confidence VaR (5th percentile of historical returns)
+                        var_95_pct = np.percentile(portfolio_daily_returns, 5)
+                        rule_results.historical_var_95 = round(abs(var_95_pct) * 100, 2)
+                        logger.info(f"Historical 95% VaR computed: {rule_results.historical_var_95}%")
+
             except Exception as e:
-                logger.warning("Correlation analysis failed", error=str(e))
+                logger.warning("Correlation/VaR analysis failed", error=str(e))
 
         # --- Step 6: Call Claude for AI analysis ---
         claude_analysis: Optional[ClaudeAnalysis] = None
@@ -137,19 +174,68 @@ class RiskAnalysisService:
 
         if needs_ai:
             try:
-                # Build market context for Claude
+                # 1. Sort positions by nav_percentage and chunk to Top 15 + "Other" to optimize context window
+                sorted_positions = sorted(positions_dicts, key=lambda x: -x.get("nav_percentage", 0.0))
+                top_15_positions = []
+                other_market_value = 0.0
+                other_nav_pct = 0.0
+                for i, pos in enumerate(sorted_positions):
+                    clean_pos = {
+                        "name": pos.get("name", "Unknown"),
+                        "symbol": pos.get("symbol", "Unknown"),
+                        "market_value": round(pos.get("market_value", 0.0), 2),
+                        "nav_percentage": round(pos.get("nav_percentage", 0.0), 2),
+                        "sector": pos.get("sector", "Unknown"),
+                        "country": pos.get("country", "Unknown"),
+                        "asset_class": pos.get("asset_class", "Unknown"),
+                    }
+                    if i < 15:
+                        top_15_positions.append(clean_pos)
+                    else:
+                        other_market_value += clean_pos["market_value"]
+                        other_nav_pct += clean_pos["nav_percentage"]
+
+                if len(sorted_positions) > 15:
+                    top_15_positions.append({
+                        "name": "Other Assets (Combined)",
+                        "symbol": "OTHER",
+                        "market_value": round(other_market_value, 2),
+                        "nav_percentage": round(other_nav_pct, 2),
+                        "sector": "Various",
+                        "country": "Various",
+                        "asset_class": "Various",
+                    })
+
+                # 2. Build market context for Claude focusing on top holdings and breached holdings
                 market_context = {}
                 if symbols:
                     try:
                         yahoo = get_yahoo_client()
-                        # Get volatility for top holdings
-                        top_symbols = [p["symbol"] for p in sorted(positions, key=lambda x: -x.get("nav_percentage", 0))[:5] if p.get("symbol") and p.get("asset_class") != "cash"]
-                        for sym in top_symbols[:3]:
+                        # Get symbols for any significant breaches/warnings
+                        breached_symbols = set()
+                        all_checks = (
+                            rule_results.issuer_checks +
+                            rule_results.sector_checks +
+                            rule_results.geography_checks +
+                            rule_results.asset_class_checks
+                        )
+                        significant_entities = {c.entity for c in all_checks if c.status in (BreachStatus.BREACH, BreachStatus.WARNING)}
+                        entity_to_symbol = {p.get("name"): p.get("symbol") for p in positions_dicts if p.get("symbol")}
+                        for entity in significant_entities:
+                            if entity in entity_to_symbol:
+                                breached_symbols.add(entity_to_symbol[entity])
+
+                        # Add top 3 symbols by weight to ensure major asset context is present
+                        top_symbols = [p["symbol"] for p in sorted_positions[:3] if p.get("symbol") and p.get("asset_class") != "cash"]
+                        breached_symbols.update(top_symbols)
+
+                        # Limit lookups to max 8 to prevent slow API response times
+                        for sym in list(breached_symbols)[:8]:
                             vol = yahoo.get_volatility(sym)
                             if vol["volatility_30d"] > 0:
                                 market_context[sym] = vol
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("Failed to collect market context", error=str(e))
 
                 portfolio_context = {
                     "portfolio_id": portfolio_id,
@@ -165,6 +251,7 @@ class RiskAnalysisService:
                 claude_analysis, model_info = await claude.analyze_portfolio_risk(
                     portfolio_context=portfolio_context,
                     rule_engine_results=rule_results.model_dump(),
+                    top_positions=top_15_positions,
                     market_context=market_context,
                 )
             except Exception as e:

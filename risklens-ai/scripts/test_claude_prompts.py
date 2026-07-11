@@ -68,6 +68,7 @@ async def main():
     analysis, model_info = await client.analyze_portfolio_risk(
         portfolio_context=portfolio_context,
         rule_engine_results=results.model_dump(),
+        top_positions=positions[:15],
         market_context={"volatility": "VIX at 22, market trending downwards"},
     )
     
