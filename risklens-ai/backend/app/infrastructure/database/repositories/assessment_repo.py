@@ -106,11 +106,40 @@ class AlertRepository:
 
 
 class AuditRepository:
-    """Repository for audit logs — append-only."""
+    """Repository for audit logs — append-only with cryptographic hash-chaining."""
 
     @staticmethod
     async def create(log_entry: dict) -> str:
+        from app.domain.models.audit import AuditLog
         collection = get_collection("audit_logs")
+
+        # 1. Fetch previous entry to establish previous_hash for the chain
+        previous_entry = await collection.find_one(
+            sort=[("timestamp", -1)]
+        )
+        previous_hash = previous_entry.get("entry_hash", "") if previous_entry else ""
+
+        # 2. Hydrate model and compute current hash
+        log_entry["previous_hash"] = previous_hash
+        
+        # Ensure timestamp is a datetime object for validation
+        ts = log_entry.get("timestamp")
+        if isinstance(ts, str):
+            try:
+                log_entry["timestamp"] = datetime.fromisoformat(ts)
+            except Exception:
+                log_entry["timestamp"] = datetime.utcnow()
+        elif not ts:
+            log_entry["timestamp"] = datetime.utcnow()
+
+        audit_model = AuditLog(**log_entry)
+        entry_hash, crypto_signature = audit_model.compute_hash_and_signature()
+
+        # 3. Write back with hashes
+        log_entry["entry_hash"] = entry_hash
+        log_entry["crypto_signature"] = crypto_signature
+        # Normalize timestamp back to isoformat for storage consistency if needed, 
+        # or leave as datetime object which PyMongo handles natively.
         result = await collection.insert_one(log_entry)
         return str(result.inserted_id)
 

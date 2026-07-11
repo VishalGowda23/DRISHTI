@@ -43,6 +43,49 @@ class AuditLog(BaseModel):
     alert_id: Optional[str] = None
     details: Dict[str, Any] = {}
     request_metadata: Dict[str, Any] = {}
+    previous_hash: str = ""
+    entry_hash: str = ""
+    crypto_signature: str = ""
+
+    def compute_hash_and_signature(self) -> tuple[str, str]:
+        """Compute the SHA-256 hash and RSA signature of this audit log entry."""
+        import hashlib
+        import json
+        import base64
+        from cryptography.hazmat.primitives.asymmetric import rsa, padding
+        from cryptography.hazmat.primitives import hashes
+        
+        # Stabilize JSON structures
+        details_str = json.dumps(self.details, sort_keys=True, default=str)
+        metadata_str = json.dumps(self.request_metadata, sort_keys=True, default=str)
+        
+        raw_payload = (
+            f"{self.id}|{self.timestamp.isoformat()}|{self.action}|{self.actor}|"
+            f"{self.portfolio_id or ''}|{self.assessment_id or ''}|{self.alert_id or ''}|"
+            f"{details_str}|{metadata_str}|{self.previous_hash}"
+        )
+        payload_bytes = raw_payload.encode("utf-8")
+        entry_hash = hashlib.sha256(payload_bytes).hexdigest()
+
+        # In a real app, this key would be securely loaded from a KMS/Vault.
+        # For the hackathon, we generate an ephemeral signing key to demonstrate SEC 17a-4 immutability.
+        if not hasattr(self, "_signing_key"):
+            self.__class__._signing_key = rsa.generate_private_key(
+                public_exponent=65537,
+                key_size=2048,
+            )
+        
+        signature = self.__class__._signing_key.sign(
+            payload_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH
+            ),
+            hashes.SHA256()
+        )
+        signature_b64 = base64.b64encode(signature).decode('utf-8')
+        
+        return entry_hash, signature_b64
 
     model_config = {"populate_by_name": True}
 
