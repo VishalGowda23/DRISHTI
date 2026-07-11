@@ -36,11 +36,15 @@ class ClaudeClient:
         )
         self._max_retries = 3
         self._retry_delays = [1, 3, 5]
+        # In-memory cache for cost and rate limit optimization: hash_key -> (ClaudeAnalysis, ModelInfo, timestamp)
+        from cachetools import TTLCache
+        self._cache = TTLCache(maxsize=1000, ttl=900)  # 15 minutes TTL, max 1000 items to prevent memory leaks
 
     async def analyze_portfolio_risk(
         self,
         portfolio_context: dict,
         rule_engine_results: dict,
+        top_positions: list[dict],
         market_context: Optional[dict] = None,
     ) -> tuple[ClaudeAnalysis, ModelInfo]:
         """Send portfolio data to Claude for AI-powered risk analysis.
@@ -52,16 +56,44 @@ class ClaudeClient:
         Args:
             portfolio_context: Dict with portfolio_id, fund_name, fund_type, total_nav, etc.
             rule_engine_results: Pre-computed concentration checks from rule engine
+            top_positions: Sorted and aggregated list of major positions
             market_context: Optional dict with volatility, price changes
 
         Returns:
             Tuple of (ClaudeAnalysis, ModelInfo)
         """
+        # Generate cache key based on rule engine results and market context to save LLM tokens
+        import hashlib
+        
+        payload_str = json.dumps(
+            {"rules": rule_engine_results, "market": market_context or {}},
+            sort_keys=True,
+            default=str
+        )
+        cache_key = hashlib.sha256(payload_str.encode("utf-8")).hexdigest()
+
+        # Check Cache Hit
+        if cache_key in self._cache:
+            cached_analysis, cached_model_info = self._cache[cache_key]
+            logger.info(
+                "LLM cache hit! Returning cached risk analysis.",
+                portfolio_id=portfolio_context.get("portfolio_id")
+            )
+            return cached_analysis, cached_model_info
+
+        from app.core.config import get_settings
+        settings = get_settings()
+        api_key = settings.anthropic_api_key
+        if not api_key or len(api_key) < 20:
+            logger.error("Missing or invalid ANTHROPIC_API_KEY. Failing fast without retries.")
+            return self._fallback_analysis(rule_engine_results), ModelInfo()
+
         system_prompt = get_system_prompt()
         user_prompt = build_concentration_analysis_prompt(
             portfolio_context=portfolio_context,
             rule_engine_results=rule_engine_results,
             market_context=market_context or {},
+            top_positions=top_positions,
         )
 
         start_time = time.time()
@@ -100,6 +132,8 @@ class ClaudeClient:
                     completion_tokens=model_info.completion_tokens,
                 )
 
+                # Cache the results
+                self._cache[cache_key] = (analysis, model_info)
                 return analysis, model_info
 
             except ValueError as e:

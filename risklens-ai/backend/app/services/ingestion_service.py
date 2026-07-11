@@ -78,35 +78,43 @@ class IngestionService:
         Returns:
             Tuple of (portfolio_id, positions_count)
         """
-        try:
-            text = file_content.decode("utf-8")
-        except UnicodeDecodeError:
-            text = file_content.decode("latin-1")
+        import asyncio
 
-        reader = csv.DictReader(io.StringIO(text))
-        columns = set(reader.fieldnames or [])
+        def _parse_csv():
+            try:
+                text = file_content.decode("utf-8")
+            except UnicodeDecodeError:
+                text = file_content.decode("latin-1")
 
-        # Validate required columns
-        missing = REQUIRED_CSV_COLUMNS - columns
-        if missing:
-            raise ValueError(f"Missing required columns: {', '.join(missing)}")
+            reader = csv.DictReader(io.StringIO(text))
+            columns = set(reader.fieldnames or [])
 
-        positions_data = []
-        for row in reader:
-            positions_data.append({
-                "symbol": row.get("symbol", "").strip(),
-                "name": row.get("name", "").strip(),
-                "asset_class": row.get("asset_class", "equity").strip().lower(),
-                "sector": row.get("sector", "Unknown").strip(),
-                "country": row.get("country", "Unknown").strip(),
-                "quantity": float(row.get("quantity", 0)),
-                "current_price": float(row.get("current_price", 0)) if row.get("current_price") else 0,
-                "avg_cost_price": float(row.get("avg_cost_price", 0)) if row.get("avg_cost_price") else 0,
-                "currency": row.get("currency", "INR").strip(),
-            })
+            # Validate required columns
+            missing = REQUIRED_CSV_COLUMNS - columns
+            if missing:
+                raise ValueError(f"Missing required columns: {', '.join(missing)}")
 
-        if not positions_data:
-            raise ValueError("CSV file contains no valid position rows")
+            positions_data = []
+            for row in reader:
+                positions_data.append({
+                    "symbol": row.get("symbol", "").strip(),
+                    "name": row.get("name", "").strip(),
+                    "asset_class": row.get("asset_class", "equity").strip().lower(),
+                    "sector": row.get("sector", "Unknown").strip(),
+                    "country": row.get("country", "Unknown").strip(),
+                    "quantity": float(row.get("quantity", 0)),
+                    "current_price": float(row.get("current_price", 0)) if row.get("current_price") else 0,
+                    "avg_cost_price": float(row.get("avg_cost_price", 0)) if row.get("avg_cost_price") else 0,
+                    "currency": row.get("currency", "INR").strip(),
+                    "position_type": row.get("position_type", "long").strip().lower(),
+                })
+
+            if not positions_data:
+                raise ValueError("CSV file contains no valid position rows")
+            
+            return positions_data
+
+        positions_data = await asyncio.to_thread(_parse_csv)
 
         return await IngestionService._process_positions(
             positions_data=positions_data,
@@ -160,6 +168,7 @@ class IngestionService:
                 "avg_cost_price": float(pos.get("avg_cost_price", price)),
                 "current_price": price,
                 "market_value": round(market_value, 2),
+                "position_type": pos.get("position_type", "long").strip().lower(),
                 "nav_percentage": 0,  # Calculated after total NAV
                 "currency": pos.get("currency", currency),
                 "last_price_update": datetime.utcnow().isoformat(),
