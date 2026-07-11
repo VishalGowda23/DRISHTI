@@ -28,9 +28,9 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
 
-    # --- MongoDB ---
-    mongodb_uri: str = Field(default="mongodb://risklens:risklens2026@localhost:27017/risklens?authSource=admin")
-    mongodb_db_name: str = Field(default="risklens")
+    # --- MongoDB Atlas ---
+    mongodb_uri: str = Field(default="")  # Must be set via MONGODB_URI env var
+    mongodb_db_name: str = Field(default="portfolio_risk")
 
     # --- Kafka ---
     kafka_bootstrap_servers: str = Field(default="localhost:9092")
