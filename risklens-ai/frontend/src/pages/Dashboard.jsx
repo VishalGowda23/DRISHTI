@@ -12,13 +12,6 @@ const SEVERITY_COLORS = {
   LOW: 'var(--color-low)',
 };
 
-const SEVERITY_BG = {
-  CRITICAL: 'var(--color-critical-bg)',
-  HIGH: 'var(--color-high-bg)',
-  MEDIUM: 'var(--color-medium-bg)',
-  LOW: 'var(--color-low-bg)',
-};
-
 export default function Dashboard() {
   const [portfolios, setPortfolios] = useState([]);
   const [activeAlerts, setActiveAlerts] = useState([]);
@@ -37,9 +30,11 @@ export default function Dashboard() {
       const latest = wsAlerts[0];
       toast(`🚨 ${latest.severity}: ${latest.title}`, {
         duration: 5000,
-        style: { borderLeft: `4px solid ${SEVERITY_COLORS[latest.severity] || '#666'}` },
+        style: {
+          borderLeft: `5px solid ${SEVERITY_COLORS[latest.severity] || '#666'}`,
+        },
       });
-      fetchData(); // Refresh dashboard
+      fetchData();
     }
   }, [wsAlerts]);
 
@@ -77,7 +72,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}>
+      <div className="loading-center">
         <RefreshCw size={32} className="pulse" style={{ color: 'var(--accent-primary)' }} />
       </div>
     );
@@ -88,63 +83,64 @@ export default function Dashboard() {
       {/* Header */}
       <div className="page-header">
         <div>
-          <h2>📊 Risk Dashboard</h2>
-          <p>Real-time portfolio risk monitoring</p>
+          <h2>Risk Dashboard</h2>
+          <p>Real-time portfolio risk monitoring & concentration alerts</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div className="status-indicator" style={{ color: isConnected ? 'var(--accent-green)' : 'var(--color-high)' }}>
-            <Activity size={14} className={isConnected ? 'pulse' : ''} />
-            <span>{isConnected ? 'Live' : 'Disconnected'}</span>
+          <div
+            className="status-indicator"
+            style={{
+              color: isConnected ? 'var(--accent-green)' : 'var(--color-critical)',
+              background: isConnected ? 'var(--accent-green-bg)' : 'var(--color-critical-bg)',
+              padding: '4px 14px',
+              border: 'var(--border-default)',
+              borderRadius: 'var(--radius-sm)',
+              boxShadow: 'var(--shadow-sm)',
+            }}
+          >
+            <Activity size={12} className={isConnected ? 'pulse' : ''} />
+            <span>{isConnected ? 'LIVE' : 'OFFLINE'}</span>
           </div>
         </div>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
-        <div className="card" style={{ borderLeft: '3px solid var(--accent-primary)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-            <div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Portfolios</p>
-              <p style={{ fontSize: '2rem', fontWeight: 700, marginTop: 4 }}>{portfolios.length}</p>
-            </div>
-            <BarChart3 size={24} style={{ color: 'var(--accent-primary)', opacity: 0.7 }} />
-          </div>
+      <div className="grid-4 mb-xl">
+        <div className="stat-card bounce-in stagger-1" style={{ '--stat-accent': 'var(--accent-primary)' }}>
+          <div className="stat-icon"><BarChart3 size={40} /></div>
+          <p className="stat-label">Portfolios</p>
+          <p className="stat-value">{portfolios.length}</p>
         </div>
 
-        <div className="card" style={{ borderLeft: `3px solid ${SEVERITY_COLORS.CRITICAL}` }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-            <div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Critical Alerts</p>
-              <p style={{ fontSize: '2rem', fontWeight: 700, marginTop: 4, color: criticalCount > 0 ? SEVERITY_COLORS.CRITICAL : 'var(--text-primary)' }}>{criticalCount}</p>
-            </div>
-            <AlertTriangle size={24} style={{ color: SEVERITY_COLORS.CRITICAL, opacity: 0.7 }} />
-          </div>
+        <div className="stat-card bounce-in stagger-2" style={{ '--stat-accent': 'var(--color-critical)' }}>
+          <div className="stat-icon"><AlertTriangle size={40} /></div>
+          <p className="stat-label">Critical Alerts</p>
+          <p className="stat-value" style={{ color: criticalCount > 0 ? 'var(--color-critical)' : undefined }}>
+            {criticalCount}
+          </p>
         </div>
 
-        <div className="card" style={{ borderLeft: `3px solid ${SEVERITY_COLORS.HIGH}` }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-            <div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>High Alerts</p>
-              <p style={{ fontSize: '2rem', fontWeight: 700, marginTop: 4, color: highCount > 0 ? SEVERITY_COLORS.HIGH : 'var(--text-primary)' }}>{highCount}</p>
-            </div>
-            <Shield size={24} style={{ color: SEVERITY_COLORS.HIGH, opacity: 0.7 }} />
-          </div>
+        <div className="stat-card bounce-in stagger-3" style={{ '--stat-accent': 'var(--color-high)' }}>
+          <div className="stat-icon"><Shield size={40} /></div>
+          <p className="stat-label">High Alerts</p>
+          <p className="stat-value" style={{ color: highCount > 0 ? 'var(--color-high)' : undefined }}>
+            {highCount}
+          </p>
         </div>
 
-        <div className="card" style={{ borderLeft: `3px solid ${SEVERITY_COLORS.MEDIUM}` }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start' }}>
-            <div>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Warnings</p>
-              <p style={{ fontSize: '2rem', fontWeight: 700, marginTop: 4 }}>{mediumCount}</p>
-            </div>
-            <TrendingUp size={24} style={{ color: SEVERITY_COLORS.MEDIUM, opacity: 0.7 }} />
-          </div>
+        <div className="stat-card bounce-in stagger-4" style={{ '--stat-accent': 'var(--color-medium)' }}>
+          <div className="stat-icon"><TrendingUp size={40} /></div>
+          <p className="stat-label">Warnings</p>
+          <p className="stat-value">{mediumCount}</p>
         </div>
       </div>
 
       {/* Portfolios Table */}
-      <div className="card" style={{ marginBottom: 'var(--space-xl)' }}>
-        <h3 style={{ marginBottom: 'var(--space-md)', fontWeight: 600 }}>Active Portfolios</h3>
+      <div className="card mb-xl">
+        <h3 className="section-title">
+          <BarChart3 size={18} />
+          Active Portfolios
+        </h3>
         <table>
           <thead>
             <tr>
@@ -159,27 +155,39 @@ export default function Dashboard() {
           <tbody>
             {portfolios.map((p) => (
               <tr key={p._id}>
-                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>{p._id}</td>
-                <td style={{ fontWeight: 500 }}>{p.fund_name}</td>
-                <td style={{ color: 'var(--text-muted)' }}>{p.fund_type}</td>
-                <td>₹{(p.total_nav / 10000000).toFixed(2)} Cr</td>
-                <td>{p.positions_count}</td>
-                <td style={{ display: 'flex', gap: 8 }}>
-                  <button className="btn" onClick={() => navigate(`/portfolio/${p._id}`)}>View</button>
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => handleAnalyze(p._id)}
-                    disabled={analyzing === p._id}
-                  >
-                    {analyzing === p._id ? <RefreshCw size={14} className="pulse" /> : <Shield size={14} />}
-                    {analyzing === p._id ? 'Analyzing...' : 'Analyze'}
-                  </button>
+                <td className="mono">{p._id}</td>
+                <td style={{ fontWeight: 600 }}>{p.fund_name}</td>
+                <td>
+                  <span className="badge badge-info">{p.fund_type}</span>
+                </td>
+                <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                  ₹{(p.total_nav / 10000000).toFixed(2)} Cr
+                </td>
+                <td style={{ fontWeight: 600 }}>{p.positions_count}</td>
+                <td>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn" onClick={() => navigate(`/portfolio/${p._id}`)}>
+                      View
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => handleAnalyze(p._id)}
+                      disabled={analyzing === p._id}
+                    >
+                      {analyzing === p._id ? (
+                        <RefreshCw size={14} className="pulse" />
+                      ) : (
+                        <Shield size={14} />
+                      )}
+                      {analyzing === p._id ? 'Analyzing...' : 'Analyze'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
             {portfolios.length === 0 && (
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: 'var(--space-xl)', color: 'var(--text-muted)' }}>
+                <td colSpan={6} className="empty-state" style={{ padding: 'var(--space-2xl)' }}>
                   No portfolios found. Upload one to get started.
                 </td>
               </tr>
@@ -190,34 +198,34 @@ export default function Dashboard() {
 
       {/* Recent Alerts */}
       <div className="card">
-        <h3 style={{ marginBottom: 'var(--space-md)', fontWeight: 600 }}>Recent Alerts</h3>
+        <h3 className="section-title">
+          <AlertTriangle size={18} />
+          Recent Alerts
+        </h3>
         {activeAlerts.length === 0 ? (
-          <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: 'var(--space-lg)' }}>
-            ✅ No active alerts. All portfolios within limits.
-          </p>
+          <div className="empty-state">
+            <Shield size={48} style={{ color: 'var(--accent-green)' }} />
+            <p>All clear — no active alerts. All portfolios within limits.</p>
+          </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
             {activeAlerts.map((alert) => (
               <div
                 key={alert._id}
-                className="card"
+                className="alert-card"
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  padding: 'var(--space-md)',
-                  borderLeft: `3px solid ${SEVERITY_COLORS[alert.severity] || '#666'}`,
+                  borderLeftColor: SEVERITY_COLORS[alert.severity] || '#666',
                   cursor: 'pointer',
                 }}
                 onClick={() => navigate('/alerts')}
               >
-                <div>
-                  <span className={`badge badge-${alert.severity?.toLowerCase()}`}>{alert.severity}</span>
-                  <span style={{ marginLeft: 12, fontWeight: 500 }}>{alert.title}</span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                    <span className={`badge badge-${alert.severity?.toLowerCase()}`}>{alert.severity}</span>
+                    <span style={{ fontWeight: 600, fontFamily: 'var(--font-heading)' }}>{alert.title}</span>
+                  </div>
+                  <span className="mono text-muted">{alert.portfolio_id}</span>
                 </div>
-                <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>
-                  {alert.portfolio_id}
-                </span>
               </div>
             ))}
           </div>

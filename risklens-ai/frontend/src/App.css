@@ -1,19 +1,20 @@
 /* ============================================
-   RiskLens AI — App Layout Styles
-   Sidebar + Main Content layout
+   RiskLens AI — Neo-Brutalist Layout
+   Sidebar + Main Content with thick borders
    ============================================ */
 
 .app-layout {
   display: flex;
   min-height: 100vh;
+  background: var(--bg-base);
 }
 
 /* --- Sidebar --- */
 .sidebar {
-  width: 240px;
+  width: 260px;
   min-height: 100vh;
-  background: var(--bg-surface);
-  border-right: 1px solid var(--border-default);
+  background: var(--bg-sidebar);
+  border-right: 3px solid var(--border-color);
   display: flex;
   flex-direction: column;
   position: fixed;
@@ -26,8 +27,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  padding: var(--space-lg);
-  border-bottom: 1px solid var(--border-default);
+  padding: var(--space-lg) var(--space-lg);
+  border-bottom: 3px solid var(--border-color);
+  background: var(--bg-subtle);
 }
 
 .logo-icon {
@@ -36,20 +38,25 @@
 }
 
 .logo-text {
-  font-size: 1.2rem;
-  font-weight: 800;
+  font-family: var(--font-heading);
+  font-size: 1.35rem;
+  font-weight: 700;
   color: var(--text-primary);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
 }
 
 .logo-badge {
+  font-family: var(--font-heading);
   font-size: 0.6rem;
   font-weight: 700;
-  color: var(--accent-primary);
-  background: rgba(137, 180, 250, 0.15);
-  padding: 1px 6px;
-  border-radius: var(--radius-full);
+  color: var(--text-inverse);
+  background: var(--accent-primary);
+  border: 1.5px solid var(--border-color);
+  padding: 1px 8px;
+  border-radius: var(--radius-sm);
   margin-left: 4px;
+  box-shadow: 1px 1px 0px var(--border-color);
+  letter-spacing: 0.05em;
 }
 
 .sidebar-nav {
@@ -57,52 +64,93 @@
   padding: var(--space-md);
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
 .nav-item {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding: var(--space-sm) var(--space-md);
+  gap: 10px;
+  padding: 10px var(--space-md);
+  border: 2px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
+  font-family: var(--font-heading);
   font-size: 0.875rem;
   font-weight: 500;
   transition: all var(--transition-fast);
   text-decoration: none;
+  cursor: pointer;
 }
 
 .nav-item:hover {
-  background: rgba(137, 180, 250, 0.08);
+  background: var(--bg-subtle);
   color: var(--text-primary);
+  border-color: var(--border-color-light);
+  text-decoration: none;
 }
 
 .nav-item.active {
-  background: rgba(137, 180, 250, 0.12);
+  background: var(--accent-primary-bg);
   color: var(--accent-primary);
-  font-weight: 600;
+  border-color: var(--border-color);
+  font-weight: 700;
+  box-shadow: var(--shadow-sm);
 }
 
 .sidebar-footer {
   padding: var(--space-md) var(--space-lg);
-  border-top: 1px solid var(--border-default);
+  border-top: 3px solid var(--border-color);
+  background: var(--bg-subtle);
 }
 
 .status-indicator {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
-  color: var(--accent-green);
+  font-family: var(--font-heading);
   font-size: 0.75rem;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.status-indicator.live {
+  color: var(--accent-green);
+}
+
+.status-indicator.disconnected {
+  color: var(--color-critical);
 }
 
 /* --- Main Content --- */
 .main-content {
   flex: 1;
-  margin-left: 240px;
-  padding: var(--space-xl);
+  margin-left: 260px;
+  padding: var(--space-xl) var(--space-2xl);
   min-height: 100vh;
-  max-width: calc(100vw - 240px);
+  max-width: calc(100vw - 260px);
+}
+
+/* --- Responsive --- */
+@media (max-width: 768px) {
+  .sidebar {
+    width: 100%;
+    height: auto;
+    min-height: auto;
+    position: relative;
+    border-right: none;
+    border-bottom: 3px solid var(--border-color);
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 2px;
+  }
+
+  .main-content {
+    margin-left: 0;
+    max-width: 100vw;
+    padding: var(--space-lg);
+  }
 }

@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Shield, RefreshCw, TrendingUp, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Shield, RefreshCw, TrendingUp, AlertTriangle, Cpu } from 'lucide-react';
 import { portfolioApi, riskApi } from '../services/api';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import toast from 'react-hot-toast';
 
-const CHART_COLORS = ['#89b4fa', '#f38ba8', '#a6e3a1', '#fab387', '#cba6f7', '#f9e2af', '#94e2d5', '#b4befe'];
-const SEVERITY_COLORS = { CRITICAL: '#f38ba8', HIGH: '#ef4444', MEDIUM: '#fab387', LOW: '#a6e3a1' };
+const CHART_COLORS = ['#3B82F6', '#DC2626', '#059669', '#D97706', '#7C3AED', '#0D9488', '#6366F1', '#EA580C'];
+const SEVERITY_COLORS = { CRITICAL: '#DC2626', HIGH: '#EA580C', MEDIUM: '#D97706', LOW: '#059669' };
 
 export default function PortfolioDetail() {
   const { id } = useParams();
@@ -47,7 +47,11 @@ export default function PortfolioDetail() {
   };
 
   if (loading) {
-    return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '60vh' }}><RefreshCw size={32} className="pulse" style={{ color: 'var(--accent-primary)' }} /></div>;
+    return (
+      <div className="loading-center">
+        <RefreshCw size={32} className="pulse" style={{ color: 'var(--accent-primary)' }} />
+      </div>
+    );
   }
 
   if (!portfolio) return null;
@@ -71,11 +75,17 @@ export default function PortfolioDetail() {
   return (
     <div className="fade-in">
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
-        <button className="btn" onClick={() => navigate('/')}><ArrowLeft size={16} /></button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)', paddingBottom: 'var(--space-md)', borderBottom: 'var(--border-default)' }}>
+        <button className="btn" onClick={() => navigate('/')}>
+          <ArrowLeft size={16} />
+        </button>
         <div style={{ flex: 1 }}>
-          <h2>{portfolio.fund_name}</h2>
-          <p style={{ color: 'var(--text-muted)' }}>{portfolio.fund_type} · {portfolio._id}</p>
+          <h2 style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '1.6rem', letterSpacing: '-0.02em' }}>
+            {portfolio.fund_name}
+          </h2>
+          <p className="mono text-muted" style={{ marginTop: 2 }}>
+            {portfolio.fund_type} · {portfolio._id}
+          </p>
         </div>
         <button className="btn btn-primary" onClick={handleAnalyze} disabled={analyzing}>
           {analyzing ? <RefreshCw size={14} className="pulse" /> : <Shield size={14} />}
@@ -84,51 +94,82 @@ export default function PortfolioDetail() {
       </div>
 
       {/* Stats */}
-      <div className="grid-4" style={{ marginBottom: 'var(--space-xl)' }}>
-        <div className="card">
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase' }}>Total NAV</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700 }}>₹{(portfolio.total_nav / 10000000).toFixed(2)} Cr</p>
+      <div className="grid-4 mb-xl">
+        <div className="stat-card" style={{ '--stat-accent': 'var(--accent-primary)' }}>
+          <p className="stat-label">Total NAV</p>
+          <p className="stat-value" style={{ fontSize: '1.75rem' }}>₹{(portfolio.total_nav / 10000000).toFixed(2)} Cr</p>
         </div>
-        <div className="card">
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase' }}>Positions</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700 }}>{portfolio.positions_count}</p>
+        <div className="stat-card" style={{ '--stat-accent': 'var(--accent-secondary)' }}>
+          <p className="stat-label">Positions</p>
+          <p className="stat-value" style={{ fontSize: '1.75rem' }}>{portfolio.positions_count}</p>
         </div>
-        <div className="card">
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase' }}>Risk Level</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700, color: SEVERITY_COLORS[claude?.severity] || 'var(--text-primary)' }}>
-            {claude?.severity || 'Not Assessed'}
+        <div className="stat-card" style={{ '--stat-accent': claude?.severity ? SEVERITY_COLORS[claude.severity] : 'var(--text-muted)' }}>
+          <p className="stat-label">Risk Level</p>
+          <p className="stat-value" style={{
+            fontSize: '1.75rem',
+            color: SEVERITY_COLORS[claude?.severity] || 'var(--text-muted)',
+          }}>
+            {claude?.severity || 'N/A'}
           </p>
         </div>
-        <div className="card">
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.75rem', textTransform: 'uppercase' }}>Confidence</p>
-          <p style={{ fontSize: '1.5rem', fontWeight: 700 }}>{claude?.confidence ? `${(claude.confidence * 100).toFixed(0)}%` : 'N/A'}</p>
+        <div className="stat-card" style={{ '--stat-accent': 'var(--accent-purple)' }}>
+          <p className="stat-label">AI Confidence</p>
+          <p className="stat-value" style={{ fontSize: '1.75rem' }}>
+            {claude?.confidence ? `${(claude.confidence * 100).toFixed(0)}%` : 'N/A'}
+          </p>
         </div>
       </div>
 
       {/* Claude Analysis */}
       {claude && (
-        <div className="card" style={{ marginBottom: 'var(--space-xl)', borderLeft: `3px solid ${SEVERITY_COLORS[claude.severity] || '#666'}` }}>
-          <h3 style={{ fontWeight: 600, marginBottom: 'var(--space-sm)' }}>🤖 AI Analysis</h3>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>{claude.rationale}</p>
-          <p style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: 8 }}>Verdict: {claude.overall_verdict}</p>
-          
+        <div className="card mb-xl" style={{ borderLeftWidth: 5, borderLeftColor: SEVERITY_COLORS[claude.severity] || '#666' }}>
+          <h3 className="section-title">
+            <Cpu size={18} style={{ color: 'var(--accent-purple)' }} />
+            AI Risk Analysis
+          </h3>
+
+          <p style={{ color: 'var(--text-secondary)', marginBottom: 'var(--space-md)', lineHeight: 1.6 }}>
+            {claude.rationale}
+          </p>
+
+          <div style={{
+            background: 'var(--bg-subtle)',
+            border: 'var(--border-light)',
+            borderRadius: 'var(--radius-sm)',
+            padding: 'var(--space-md)',
+            marginBottom: 'var(--space-md)',
+          }}>
+            <p style={{ fontFamily: 'var(--font-heading)', fontWeight: 700, fontSize: '0.9rem' }}>
+              Verdict: {claude.overall_verdict}
+            </p>
+          </div>
+
           {claude.recommended_actions?.length > 0 && (
             <div style={{ marginBottom: 'var(--space-md)' }}>
-              <p style={{ fontWeight: 600, fontSize: '0.85rem', marginBottom: 4 }}>Recommended Actions:</p>
+              <p className="heading-sm" style={{ marginBottom: 8 }}>Recommended Actions</p>
               <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                {claude.recommended_actions.map((action, i) => <li key={i} style={{ marginBottom: 4 }}>{action}</li>)}
+                {claude.recommended_actions.map((action, i) => (
+                  <li key={i} style={{ marginBottom: 6, lineHeight: 1.5 }}>{action}</li>
+                ))}
               </ul>
             </div>
           )}
 
-          {/* AI Proposed Trades for Agentic Auto-Hedger */}
+          {/* AI Proposed Trades */}
           {claude.proposed_trades?.length > 0 && (
-            <div style={{ marginTop: 'var(--space-md)', padding: 'var(--space-md)', background: 'var(--bg-subtle)', borderRadius: 8 }}>
-              <h4 style={{ fontWeight: 600, marginBottom: 'var(--space-sm)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <TrendingUp size={16} color="var(--accent-primary)" />
+            <div style={{
+              marginTop: 'var(--space-lg)',
+              padding: 'var(--space-lg)',
+              background: 'var(--accent-purple-bg)',
+              border: '2px solid var(--accent-purple)',
+              borderRadius: 'var(--radius-md)',
+              boxShadow: 'var(--shadow-sm)',
+            }}>
+              <h4 className="section-title" style={{ borderColor: 'var(--accent-purple)', color: 'var(--accent-purple)' }}>
+                <TrendingUp size={16} />
                 AI Hedging Strategy
               </h4>
-              <table style={{ marginBottom: 'var(--space-sm)' }}>
+              <table style={{ marginBottom: 'var(--space-md)' }}>
                 <thead>
                   <tr>
                     <th>Action</th>
@@ -140,18 +181,22 @@ export default function PortfolioDetail() {
                 <tbody>
                   {claude.proposed_trades.map((trade, i) => (
                     <tr key={i}>
-                      <td style={{ fontWeight: 'bold', color: trade.action === 'SELL' ? 'var(--color-critical)' : 'var(--color-success)' }}>
+                      <td style={{
+                        fontFamily: 'var(--font-heading)',
+                        fontWeight: 700,
+                        color: trade.action === 'SELL' ? 'var(--color-critical)' : 'var(--accent-green)',
+                      }}>
                         {trade.action}
                       </td>
-                      <td style={{ fontFamily: 'var(--font-mono)' }}>{trade.symbol}</td>
-                      <td>{trade.amount_pct}%</td>
+                      <td className="mono" style={{ fontWeight: 600 }}>{trade.symbol}</td>
+                      <td style={{ fontWeight: 600 }}>{trade.amount_pct}%</td>
                       <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{trade.rationale}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <button 
-                className="btn btn-primary"
+              <button
+                className="btn btn-purple"
                 onClick={async () => {
                   try {
                     const { agentApi } = await import('../services/api');
@@ -161,13 +206,13 @@ export default function PortfolioDetail() {
                       trades: claude.proposed_trades
                     });
                     toast.success('Agentic rebalance executed successfully!');
-                    fetchPortfolio(); // Refresh
+                    fetchPortfolio();
                   } catch (err) {
                     toast.error(`Execution failed: ${err.message}`);
                   }
                 }}
               >
-                Execute AI Hedging Strategy
+                <TrendingUp size={14} /> Execute AI Hedging Strategy
               </button>
             </div>
           )}
@@ -175,28 +220,58 @@ export default function PortfolioDetail() {
       )}
 
       {/* Charts */}
-      <div className="grid-2" style={{ marginBottom: 'var(--space-xl)' }}>
+      <div className="grid-2 mb-xl">
         <div className="card">
-          <h3 style={{ fontWeight: 600, marginBottom: 'var(--space-md)' }}>Sector Allocation</h3>
-          <ResponsiveContainer width="100%" height={250}>
+          <h3 className="section-title">Sector Allocation</h3>
+          <ResponsiveContainer width="100%" height={260}>
             <PieChart>
-              <Pie data={sectorData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}>
-                {sectorData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+              <Pie
+                data={sectorData}
+                dataKey="value"
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                outerRadius={95}
+                strokeWidth={2}
+                stroke="#1A1A2E"
+                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(1)}%`}
+              >
+                {sectorData.map((_, i) => (
+                  <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                ))}
               </Pie>
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8 }} />
+              <Tooltip
+                contentStyle={{
+                  background: '#FFFFFF',
+                  border: '2px solid #1A1A2E',
+                  borderRadius: 6,
+                  boxShadow: '3px 3px 0px #1A1A2E',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 600,
+                }}
+              />
             </PieChart>
           </ResponsiveContainer>
         </div>
 
         <div className="card">
-          <h3 style={{ fontWeight: 600, marginBottom: 'var(--space-md)' }}>Top Holdings (% NAV)</h3>
-          <ResponsiveContainer width="100%" height={250}>
+          <h3 className="section-title">Top Holdings (% NAV)</h3>
+          <ResponsiveContainer width="100%" height={260}>
             <BarChart data={topHoldings} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
-              <XAxis type="number" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} />
-              <YAxis dataKey="name" type="category" width={100} tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
-              <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8 }} />
-              <Bar dataKey="pct" fill="var(--accent-primary)" radius={[0, 4, 4, 0]} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border-color-light)" />
+              <XAxis type="number" tick={{ fill: '#4A4A5A', fontSize: 11, fontFamily: "'JetBrains Mono'" }} />
+              <YAxis dataKey="name" type="category" width={105} tick={{ fill: '#1A1A2E', fontSize: 11, fontFamily: "'JetBrains Mono'" }} />
+              <Tooltip
+                contentStyle={{
+                  background: '#FFFFFF',
+                  border: '2px solid #1A1A2E',
+                  borderRadius: 6,
+                  boxShadow: '3px 3px 0px #1A1A2E',
+                  fontFamily: "'Space Grotesk', sans-serif",
+                  fontWeight: 600,
+                }}
+              />
+              <Bar dataKey="pct" fill="var(--accent-primary)" radius={[0, 3, 3, 0]} stroke="#1A1A2E" strokeWidth={1} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -204,7 +279,7 @@ export default function PortfolioDetail() {
 
       {/* Positions Table */}
       <div className="card">
-        <h3 style={{ fontWeight: 600, marginBottom: 'var(--space-md)' }}>Positions</h3>
+        <h3 className="section-title">Positions</h3>
         <table>
           <thead>
             <tr>
@@ -221,14 +296,18 @@ export default function PortfolioDetail() {
           <tbody>
             {positions.map((pos) => (
               <tr key={pos._id}>
-                <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', fontWeight: 600 }}>{pos.symbol}</td>
-                <td>{pos.name}</td>
+                <td className="mono" style={{ fontWeight: 700 }}>{pos.symbol}</td>
+                <td style={{ fontWeight: 500 }}>{pos.name}</td>
                 <td><span className="badge badge-ok">{pos.asset_class}</span></td>
                 <td style={{ color: 'var(--text-secondary)' }}>{pos.sector}</td>
-                <td>{pos.quantity?.toLocaleString()}</td>
-                <td>₹{pos.current_price?.toLocaleString()}</td>
-                <td>₹{(pos.market_value / 10000000)?.toFixed(2)} Cr</td>
-                <td style={{ fontWeight: 600, color: pos.nav_percentage > 10 ? 'var(--color-critical)' : 'var(--text-primary)' }}>
+                <td className="mono">{pos.quantity?.toLocaleString()}</td>
+                <td className="mono">₹{pos.current_price?.toLocaleString()}</td>
+                <td className="mono" style={{ fontWeight: 600 }}>₹{(pos.market_value / 10000000)?.toFixed(2)} Cr</td>
+                <td style={{
+                  fontWeight: 700,
+                  fontFamily: 'var(--font-heading)',
+                  color: pos.nav_percentage > 10 ? 'var(--color-critical)' : 'var(--text-primary)',
+                }}>
                   {pos.nav_percentage?.toFixed(2)}%
                 </td>
               </tr>

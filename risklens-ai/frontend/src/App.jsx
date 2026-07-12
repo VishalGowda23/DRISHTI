@@ -69,7 +69,16 @@ function App() {
       <Toaster
         position="top-right"
         toastOptions={{
-          style: { background: '#1e1e2e', color: '#cdd6f4', border: '1px solid #313244' },
+          style: {
+            background: '#FFFFFF',
+            color: '#1A1A2E',
+            border: '2px solid #1A1A2E',
+            borderRadius: '6px',
+            boxShadow: '4px 4px 0px #1A1A2E',
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontWeight: 600,
+            fontSize: '0.85rem',
+          },
         }}
       />
     </BrowserRouter>
